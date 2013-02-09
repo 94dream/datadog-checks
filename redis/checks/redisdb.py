@@ -95,23 +95,23 @@ class Redis(AgentCheck):
             self.log.exception("Cannot parse dictionary string: %s" % string)
             return default
 
-    def _get_conn(self, host, port, password):
+    def _get_conn(self, host, port, password, db):
         import redis
-        key = (host, port)
+        key = (host, port, db)
         if key not in self.connections:
             if password is not None and len(password) > 0:
                 try:
-                    self.connections[key] = redis.Redis(host=host, port=port, password=password)
+                    self.connections[key] = redis.Redis(host=host, port=port, password=password, db=db)
                 except TypeError:
                     self.log.exception("You need a redis library that supports authenticated connections. Try easy_install redis.")
                     raise
             else:
-                self.connections[key] = redis.Redis(host=host, port=port)
+                self.connections[key] = redis.Redis(host=host, port=port, db=db)
 
         return self.connections[key]
 
-    def _check_db(self, host, port, password, list_lengths=[],  custom_tags=None):
-        conn = self._get_conn(host, port, password)
+    def _check_db(self, host, port, password, db, list_lengths,  custom_tags=None):
+        conn = self._get_conn(host, port, password, db)
         tags = set(custom_tags or [])
         tags = sorted(tags.union(["redis_host:%s" % host,
                                   "redis_port:%s" % port]))
@@ -158,11 +158,11 @@ class Redis(AgentCheck):
                     round(100 * (float(val1) / float(val2)), 2),
                     tags=tags)
 
-        # Calculate the length of lists specified in list_lenghts
+        # Calculate the length of lists specified in list_lengths
         from redis.exceptions import ResponseError
         for _list in list_lengths:
             try:
-                self.gauge('redis.llen.%s' % key, conn.llen(_list), tags=tags)
+                self.gauge('redis.llen.%s' % _list, conn.llen(_list), tags=tags)
             except ResponseError, e:
                 self.log.error("Could not get length of %s: %s " % (key, e))
                 pass
@@ -179,12 +179,12 @@ class Redis(AgentCheck):
         # Allow the default redis database to be overridden.
         host = instance.get('host', 'localhost')
         port = instance.get('port', 6379)
-        db = instance.get('db', 0)
+        db = instance.get('db', 0) # DB on which to run llen checks
         password = instance.get('password', None)
         custom_tags = instance.get('tags', [])
         list_lengths = instance.get('list_lengths', [])
 
-        self._check_db(host, int(port), password, list_lengths, custom_tags)
+        self._check_db(host, int(port), password, int(db), list_lengths, custom_tags)
 
 
 if __name__ == '__main__':
