@@ -10,8 +10,17 @@
     # 'received' example
     # [2015-07-20 18:25:59,371: INFO/MainProcess] Received task: appratings.tasks.add[6cd42812-7a9e-49d5-9bbd-1174233441cb]
 
-    # 'scheduler' example
+    # 'sending' example
     # [2015-07-20 18:24:18,036: INFO/MainProcess] Scheduler: Sending due task add-every-5-seconds (appratings.tasks.add)
+
+    # 'writing' example
+    # [2015-07-22 16:14:10,206: INFO/MainProcess] Writing entries...
+
+    # 'starting' example
+    # [2015-07-28 03:30:17,183: INFO/MainProcess] beat: Starting...
+
+    # 'schedule_changed' example
+    # [2015-07-28 03:30:17,338: INFO/MainProcess] DatabaseScheduler: Schedule changed.
 
     # 'error' example
     # [2013-02-06 14:02:02,435: WARNING/MainProcess] len() on an unsliced queryset is not allowed
@@ -31,7 +40,13 @@ def parse_celery(logging, line):
 
     received_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*Received task: (?P<task>[\w\.]+)\[(?P<task_id>[\w\-]+)\]"
 
-    scheduler_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*Scheduler: Sending due task (?P<task_name>[\w\-\.]+) \((?P<task>.*?)\)"
+    sending_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*Scheduler: Sending due task (?P<task_name>[\w\-\.]+) \((?P<task>.*?)\)"
+
+    writing_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*Writing entries\.\.\."
+
+    starting_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*beat: Starting\.\.\."
+
+    schedule_changed_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*DatabaseScheduler: Schedule changed\."
 
     error_regex = "\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.*?(\d+)).*"
 
@@ -63,12 +78,45 @@ def parse_celery(logging, line):
             attr_dict
         )
 
-    # Task scheduled?
-    match = re.match(scheduler_regex, line)
+    # Task sending?
+    match = re.match(sending_regex, line)
     if match:
         event = match.groupdict()
-        celery_event = "scheduler"
+        celery_event = "sending"
         return ("celery.%s.%s" % (celery_event, event['task']),
+            common.parse_date(event['timestamp']),
+            1, # metric count
+            attr_dict
+        )
+
+    # Task writing?
+    match = re.match(writing_regex, line)
+    if match:
+        event = match.groupdict()
+        celery_event = "writing"
+        return ("celery.%s" % celery_event,
+            common.parse_date(event['timestamp']),
+            1, # metric count
+            attr_dict
+        )
+
+    # Beat starting?
+    match = re.match(starting_regex, line)
+    if match:
+        event = match.groupdict()
+        celery_event = "starting"
+        return ("celery.%s" % celery_event,
+            common.parse_date(event['timestamp']),
+            1, # metric count
+            attr_dict
+        )
+
+    # Schedule changed?
+    match = re.match(schedule_changed_regex, line)
+    if match:
+        event = match.groupdict()
+        celery_event = "schedule_changed"
+        return ("celery.%s" % celery_event,
             common.parse_date(event['timestamp']),
             1, # metric count
             attr_dict
@@ -116,20 +164,61 @@ def test_received(logging):
     actual = parse_celery(logging, received_input)
     assert expected == actual, "%s != %s" % (expected, actual)
 
-def test_scheduler(logging):
-    """ Test scheduler line.
+def test_sending(logging):
+    """ Test sending line.
     """
-    received_input = "[2015-07-20 18:24:18,036: INFO/MainProcess] Scheduler: Sending due task add-every-5-seconds (appratings.tasks.add)"
+    sending_input = "[2015-07-20 18:24:18,036: INFO/MainProcess] Scheduler: Sending due task add-every-5-seconds (appratings.tasks.add)"
     expected = (
-        "celery.scheduler.appratings.tasks.add",
+        "celery.sending.appratings.tasks.add",
         "1437441858",
         1,
         {"metric_type": "counter",
          "unit": "request"}
     )
-    actual = parse_celery(logging, received_input)
+    actual = parse_celery(logging, sending_input)
     assert expected == actual, "%s != %s" % (expected, actual)
 
+def test_writing(logging):
+    """ Test writing line.
+    """
+    writing_input = "[2015-07-22 16:14:10,206: INFO/MainProcess] Writing entries..."
+    expected = (
+        "celery.writing",
+        "1437606850",
+        1,
+        {"metric_type": "counter",
+         "unit": "request"}
+    )
+    actual = parse_celery(logging, writing_input)
+    assert expected == actual, "%s != %s" % (expected, actual)
+
+def test_starting(logging):
+    """ Test starting line.
+    """
+    starting_input = "[2015-07-28 03:30:17,183: INFO/MainProcess] beat: Starting..."
+    expected = (
+        "celery.starting",
+        "1438079417",
+        1,
+        {"metric_type": "counter",
+         "unit": "request"}
+    )
+    actual = parse_celery(logging, starting_input)
+    assert expected == actual, "%s != %s" % (expected, actual)
+
+def test_schedule_changed(logging):
+    """ Test schedule_changed line.
+    """
+    schedule_changed_input = "[2015-07-28 03:30:17,338: INFO/MainProcess] DatabaseScheduler: Schedule changed."
+    expected = (
+        "celery.schedule_changed",
+        "1438079417",
+        1,
+        {"metric_type": "counter",
+         "unit": "request"}
+    )
+    actual = parse_celery(logging, schedule_changed_input)
+    assert expected == actual, "%s != %s" % (expected, actual)
 
 def test_error(logging):
     """ Test error line.
@@ -154,8 +243,14 @@ def test():
     print "success: passed"
     test_received(logging)
     print "received: passed"
-    test_scheduler(logging)
-    print "scheduler: passed"
+    test_sending(logging)
+    print "sending: passed"
+    test_writing(logging)
+    print "writing: passed"
+    test_starting(logging)
+    print "starting: passed"
+    test_schedule_changed(logging)
+    print "schedule_changed: passed"
     test_error(logging)
     print "error: passed"
 
